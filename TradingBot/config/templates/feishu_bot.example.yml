@@ -1,0 +1,20 @@
+feishu:
+  app_id: ""
+  app_secret: ""
+  domain: feishu
+  push_chat_id: "oc_xxx"
+  allowed_dm_open_ids:
+    - "ou_xxx"
+
+tiger:
+  config_path: "C:/Users/you/Downloads/tiger_openapi_config.properties"
+  paper_account: null
+
+strategy:
+  run_dir: "D:/QLib/TradingBot/Strategies/googl_momo/live"
+
+notifications:
+  push_preview: true
+  push_submission: true
+  push_summary: false
+  push_errors: true

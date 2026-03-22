@@ -1,0 +1,11 @@
+tiger_config: "C:/Users/you/.tradingagents/tiger/tiger_openapi_config.properties"
+paper_account: null
+feishu_config: "D:/QLib/TradingBot/config/local/feishu_bot.local.yml"
+order_type: "market"
+limit_price: null
+cash_buffer_pct: 0.98
+execution_window_minutes: 15
+max_preopen_wait_minutes: 180
+order_poll_sec: 3
+max_quote_staleness_sec: 15
+bars_lookback_buffer: 30

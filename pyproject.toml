@@ -107,15 +107,23 @@ client = [
   "python-socketio<6",
   "tables",
 ]
+feishu = [
+  "lark-oapi>=1.5.3",
+]
 
 # In the process of releasing a new version, when checking the manylinux package with twine, an error is reported:
 # InvalidDistribution: Invalid distribution metadata: unrecognized or malformed field 'license-file'
 # To solve this problem, we added license-files here. Refs: https://github.com/pypa/twine/issues/1216
 [tool.setuptools]
-packages = [
-  "qlib",
-]
 license-files = []
+
+[tool.setuptools.packages.find]
+include = [
+  "qlib",
+  "qlib.*",
+  "codex_trading",
+  "codex_trading.*",
+]
 
 [project.scripts]
 qrun = "qlib.cli.run:run"

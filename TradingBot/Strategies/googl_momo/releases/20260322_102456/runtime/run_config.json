@@ -1,0 +1,18 @@
+{
+  "auth_profile_id": null,
+  "auto_download_us_data": true,
+  "benchmark_symbol": "QQQ",
+  "candidates_per_round": 6,
+  "end_date": "2026-03-22",
+  "initial_cash": 100000.0,
+  "llm_model": "gpt-5.4",
+  "max_rounds": 10,
+  "output_dir": "D:\\QLib\\examples\\codex_daily_autoresearch\\output",
+  "patience": 99,
+  "provider_uri": "~/.qlib/qlib_data/us_data",
+  "region": "us",
+  "start_date": "2024-03-22",
+  "state_dir": null,
+  "symbol": "GOOGL",
+  "time_budget_sec": 3600
+}

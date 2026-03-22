@@ -37,6 +37,11 @@ examples/us_nvda_weekly_research/cache/
 examples/us_nvda_weekly_research/output/
 examples/codex_daily_autoresearch/cache/
 examples/codex_daily_autoresearch/output/
+Saved/
+TradingBot/Saved/
+TradingBot/config/local/
+TradingBot/automations/generated/
+TestCases/e2e/generated/
 
 *.egg-info/
 

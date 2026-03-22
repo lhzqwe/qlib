@@ -1,0 +1,42 @@
+{
+  "automation_id": "googl-paper-automation",
+  "current_package_id": "20260322_114729_109458_20260322_190311_GOOGL",
+  "current_release_id": "20260322_114729_122011",
+  "instrument_universe": [
+    "GOOGL"
+  ],
+  "live_dir": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\live",
+  "notification_profile": "D:\\QLib\\TradingBot\\config\\local\\feishu_bot.local.yml",
+  "releases": [
+    {
+      "package_id": "20260322_102456_20260322_141856",
+      "published_at": "2026-03-22T10:24:56.854814+00:00",
+      "release_id": "20260322_102456",
+      "runtime_dir": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\releases\\20260322_102456\\runtime",
+      "status": "history"
+    },
+    {
+      "package_id": "20260322_111645_20260322_190311_GOOGL",
+      "published_at": "2026-03-22T11:16:45.121639+00:00",
+      "release_id": "20260322_111645",
+      "runtime_dir": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\releases\\20260322_111645\\runtime",
+      "status": "history"
+    },
+    {
+      "package_id": "20260322_111923_801755_20260322_190311_GOOGL",
+      "published_at": "2026-03-22T11:19:23.855126+00:00",
+      "release_id": "20260322_111923_844474",
+      "runtime_dir": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\releases\\20260322_111923_844474\\runtime",
+      "status": "history"
+    },
+    {
+      "package_id": "20260322_114729_109458_20260322_190311_GOOGL",
+      "published_at": "2026-03-22T11:47:29.133941+00:00",
+      "release_id": "20260322_114729_122011",
+      "runtime_dir": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\releases\\20260322_114729_122011\\runtime",
+      "status": "live"
+    }
+  ],
+  "strategy_id": "googl_momo",
+  "strategy_name": "trend_rsi_market_timebox_strict"
+}

@@ -1,0 +1,20 @@
+{
+  "automation_id": "tiger-paper-open",
+  "automation_name": "trend_rsi_market_timebox_strict (googl_momo)",
+  "automation_template": "D:\\QLib\\TradingBot\\automations\\templates\\default_strategy_automation.toml",
+  "instrument_universe": [
+    "GOOGL"
+  ],
+  "live_dir": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\live",
+  "notification_profile": "D:\\QLib\\TradingBot\\config\\local\\feishu_bot.local.yml",
+  "package_dir": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_111923_801755_20260322_190311_GOOGL",
+  "package_id": "20260322_111923_801755_20260322_190311_GOOGL",
+  "published_at": "2026-03-22T11:19:23.855126+00:00",
+  "release_dir": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\releases\\20260322_111923_844474",
+  "release_id": "20260322_111923_844474",
+  "runtime_dir": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\releases\\20260322_111923_844474\\runtime",
+  "source_run_id": "20260322_190311_GOOGL",
+  "status": "live",
+  "strategy_id": "googl_momo",
+  "strategy_name": "trend_rsi_market_timebox_strict"
+}

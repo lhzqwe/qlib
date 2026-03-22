@@ -1,0 +1,14 @@
+{
+  "symbol": "GOOGL",
+  "benchmark_symbol": "QQQ",
+  "provider_mode": "local_yahoo_dump",
+  "symbol_source": "yahoo",
+  "benchmark_source": "yahoo",
+  "start_date": "2024-03-22",
+  "end_date": "2026-03-20",
+  "num_bars": 500,
+  "symbol_return_pct": 101.2918472290039,
+  "symbol_realized_vol_pct": 29.615470833822403,
+  "benchmark_return_pct": 31.661665439605713,
+  "provider_path": "D:\\QLib\\examples\\codex_daily_autoresearch\\cache\\yahoo_provider_20240322_20260322\\qlib_day_data"
+}

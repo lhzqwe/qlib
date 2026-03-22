@@ -1,0 +1,37 @@
+{
+  "artifacts": {
+    "completed_trades.csv": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\completed_trades.csv",
+    "daily_state.csv": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\daily_state.csv",
+    "market_summary.json": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\market_summary.json",
+    "orders.csv": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\orders.csv",
+    "report_1day.csv": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\report_1day.csv",
+    "research_report.md": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\research_report.md",
+    "run_config.json": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\run_config.json",
+    "run_winner_backtest.py": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\run_winner_backtest.py",
+    "signal_diagnostics.csv": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\signal_diagnostics.csv",
+    "winner_strategy.md": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\winner_strategy.md",
+    "winner_strategy.py": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\winner_strategy.py",
+    "winner_summary.json": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\winner_summary.json"
+  },
+  "automation_id": "googl-paper-automation",
+  "backtest_summary": {
+    "completed_trades": 16,
+    "cumulative_return": 0.8990667407891091,
+    "max_drawdown_pct": -9.863010141625528,
+    "research_score": 1.8886220513404723,
+    "sharpe": 1.8886220513404723
+  },
+  "config_fingerprint": "2772293701545242546",
+  "created_at": "2026-03-22T11:47:29.121138+00:00",
+  "entry_script": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL\\run_snapshot\\winner_strategy.py",
+  "instrument_universe": [
+    "GOOGL"
+  ],
+  "package_dir": "D:\\QLib\\TradingBot\\Strategies\\googl_momo\\packages\\20260322_114729_109458_20260322_190311_GOOGL",
+  "package_id": "20260322_114729_109458_20260322_190311_GOOGL",
+  "package_label": "20260322_190311_GOOGL",
+  "source_run_dir": "D:\\QLib\\Saved\\AutoResearch\\Runs\\20260322_190311_GOOGL",
+  "source_run_id": "20260322_190311_GOOGL",
+  "strategy_id": "googl_momo",
+  "strategy_name": "trend_rsi_market_timebox_strict"
+}

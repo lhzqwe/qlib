@@ -145,6 +145,37 @@ class TigerAccountSummary:
 
 
 @dataclass(frozen=True)
+class TigerPositionSnapshot:
+    symbol: str
+    quantity: float
+    salable_quantity: float
+    market_value: Optional[float] = None
+    average_cost: Optional[float] = None
+    currency: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class TigerPortfolioSnapshot:
+    selected_account: str
+    selected_account_type: str
+    available_cash: float
+    base_currency: str
+    positions: Tuple[TigerPositionSnapshot, ...]
+    open_orders: Tuple[Dict[str, Any], ...]
+    config_account: Optional[str] = None
+    net_liquidation: Optional[float] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = asdict(self)
+        payload["positions"] = [item.to_dict() for item in self.positions]
+        payload["open_orders"] = list(self.open_orders)
+        return payload
+
+
+@dataclass(frozen=True)
 class TigerTradePlan:
     action: str
     quantity: int
@@ -875,6 +906,84 @@ def _extract_position_quantities(positions: Sequence[Any], symbol: str) -> Tuple
     return total_quantity, total_salable
 
 
+def normalize_tiger_position(position: Any) -> TigerPositionSnapshot:
+    contract = getattr(position, "contract", None)
+    symbol = str(getattr(contract, "symbol", None) or getattr(position, "symbol", None) or "").upper()
+    quantity = float(
+        _coerce_float(getattr(position, "quantity", None))
+        or _coerce_float(getattr(position, "position_qty", None))
+        or 0.0
+    )
+    salable_quantity = float(
+        _coerce_float(getattr(position, "salable_qty", None))
+        or _coerce_float(getattr(position, "saleable", None))
+        or _coerce_float(getattr(position, "salable", None))
+        or _coerce_float(getattr(position, "available_quantity", None))
+        or _coerce_float(getattr(position, "quantity", None))
+        or 0.0
+    )
+    market_value = (
+        _coerce_float(getattr(position, "market_value", None))
+        or _coerce_float(getattr(position, "market_val", None))
+        or _coerce_float(getattr(position, "position_market_value", None))
+    )
+    average_cost = (
+        _coerce_float(getattr(position, "average_cost", None))
+        or _coerce_float(getattr(position, "avg_cost", None))
+        or _coerce_float(getattr(position, "cost_price", None))
+        or _coerce_float(getattr(position, "average_price", None))
+    )
+    currency = str(getattr(position, "currency", None) or getattr(contract, "currency", None) or "USD")
+    return TigerPositionSnapshot(
+        symbol=symbol,
+        quantity=quantity,
+        salable_quantity=salable_quantity,
+        market_value=market_value,
+        average_cost=average_cost,
+        currency=currency,
+    )
+
+
+def build_tiger_portfolio_snapshot(
+    *,
+    trade_client: Any,
+    config_account: Optional[str],
+    requested_paper_account: Optional[str] = None,
+) -> TigerPortfolioSnapshot:
+    managed_accounts = trade_client.get_managed_accounts() or []
+    selected_account, selected_account_type = select_paper_account(
+        config_account=config_account,
+        managed_accounts=managed_accounts,
+        requested_paper_account=requested_paper_account,
+    )
+    positions = trade_client.get_positions(account=selected_account, sec_type="STK") or []
+    assets = trade_client.get_assets(account=selected_account)
+    open_orders = trade_client.get_open_orders(account=selected_account, sec_type="STK") or []
+    available_cash, base_currency, net_liquidation = _extract_available_cash(assets)
+    normalized_positions = tuple(
+        sorted(
+            (normalize_tiger_position(item) for item in positions),
+            key=lambda item: (-(item.market_value or 0.0), item.symbol),
+        )
+    )
+    normalized_orders = tuple(
+        sorted(
+            (normalize_tiger_order(item) for item in open_orders),
+            key=lambda item: (str(item.get("symbol") or ""), int(item.get("order_id") or 0)),
+        )
+    )
+    return TigerPortfolioSnapshot(
+        selected_account=selected_account,
+        selected_account_type=selected_account_type,
+        available_cash=available_cash,
+        base_currency=base_currency,
+        positions=normalized_positions,
+        open_orders=normalized_orders,
+        config_account=str(config_account) if config_account else None,
+        net_liquidation=net_liquidation,
+    )
+
+
 def build_tiger_account_summary(
     *,
     trade_client: Any,
@@ -925,6 +1034,20 @@ def fetch_tiger_account_summary(
         region=region,
         requested_paper_account=requested_paper_account,
         tiger_namespace=tiger_namespace,
+    )
+    return tiger_namespace, trade_client, summary
+
+
+def fetch_tiger_portfolio_snapshot(
+    *,
+    tiger_config_path: str,
+    requested_paper_account: Optional[str] = None,
+) -> Tuple[Dict[str, Any], Any, TigerPortfolioSnapshot]:
+    tiger_namespace, config_obj, _quote_client, trade_client = connect_tiger_clients(tiger_config_path)
+    summary = build_tiger_portfolio_snapshot(
+        trade_client=trade_client,
+        config_account=getattr(config_obj, "account", None),
+        requested_paper_account=requested_paper_account,
     )
     return tiger_namespace, trade_client, summary
 
