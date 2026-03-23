@@ -1,6 +1,6 @@
 # QLib Repo Knowledge Base
 
-Last updated: 2026-03-22
+Last updated: 2026-03-23
 
 ## Purpose
 
@@ -231,6 +231,7 @@ These tests validate:
   - `盘中成交`
   - `异常`
 - Summary artifacts are still written locally, but group summary push is usually disabled by config.
+- The runtime `.venv` must include `lark-oapi` for real Feishu delivery. Missing the package does not prevent preview/submission artifact generation, but notification send calls will fail at runtime.
 
 ### Automation state
 
@@ -241,11 +242,18 @@ These tests validate:
 - Do not assume Codex App `Runs in = 工作树` is safe on Windows. The App worktree clone can lag behind the live repo and may not contain the current `TradingBot/`, `codex_trading/`, `TestCases/`, or `.venv`.
 - Deployment sync must not force `execution_environment = "worktree"`. Preserve the App-selected execution environment when one already exists.
 - Automation prompts should use absolute repo paths such as `D:/QLib/.venv/Scripts/python.exe` and `D:/QLib/TradingBot/scripts/run_tiger_paper_automation.py` so worktree drift does not break script resolution.
+- On this Windows setup, Codex automation startup recovered only after `%USERPROFILE%/.codex/config.toml` was switched to `[windows] sandbox = "unelevated"`. If local tools fail before process startup with `CreateProcessWithLogonW failed: 1385`, check the Codex App sandbox mode before blaming the trading script.
 
 ### Deployment/automation coupling
 
 - `deployment_manifest.json` is the authoritative automation binding for a strategy.
 - Publish and rollback should always keep `deployment_manifest.automation_id` aligned with the actual live App automation.
+
+### Tiger PAPER order lookup
+
+- Do not assume Tiger `place_order()` returns an id that can always be queried back through `get_order(order_id=...)`.
+- In the current PAPER environment, `get_order()` may raise `1010 biz param error` even when the order was accepted and filled.
+- Order terminal-state polling should therefore fall back to `get_open_orders()` / `get_orders()` and match by normalized `order_id` or `execution_key` / `user_mark`.
 
 ## Known Architectural Notes
 
