@@ -1472,6 +1472,40 @@ def fetch_tiger_symbol_orders(
     return [normalize_tiger_order(item) for item in open_orders], [normalize_tiger_order(item) for item in history_orders]
 
 
+def _find_order_by_id_with_fallback(
+    *,
+    trade_client: Any,
+    account: str,
+    order_id: int,
+    trade_date: Optional[str],
+    execution_key: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    order_id_value = int(order_id)
+    candidates: List[Any] = []
+    with contextlib.suppress(Exception):
+        candidates.extend(trade_client.get_open_orders(account=account) or [])
+    if trade_date:
+        with contextlib.suppress(Exception):
+            candidates.extend(
+                trade_client.get_orders(
+                    account=account,
+                    start_time=trade_date,
+                    end_time=(pd.Timestamp(trade_date) + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+                    limit=200,
+                    is_brief=False,
+                )
+                or []
+            )
+    for item in candidates:
+        normalized = normalize_tiger_order(item)
+        candidate_execution_key = _execution_key_from_order(normalized)
+        if int(normalized.get("order_id") or 0) == order_id_value:
+            return normalized
+        if execution_key and candidate_execution_key == execution_key:
+            return normalized
+    return None
+
+
 def poll_tiger_order_to_terminal(
     *,
     trade_client: Any,
@@ -1487,11 +1521,37 @@ def poll_tiger_order_to_terminal(
     cancel_requested = False
     cancel_deadline = deadline + timedelta(seconds=30)
     while True:
-        order = trade_client.get_order(account=account, order_id=order_id, is_brief=False)
-        if order is None:
-            raise RuntimeError("Tiger did not return order_id=%s for account=%s." % (order_id, mask_account(account)))
-        normalized = normalize_tiger_order(order)
         now_utc = datetime.now(timezone.utc)
+        normalized: Optional[Dict[str, Any]] = None
+        try:
+            order = trade_client.get_order(account=account, order_id=order_id, is_brief=False)
+            if order is not None:
+                normalized = normalize_tiger_order(order)
+        except Exception:
+            normalized = None
+        if normalized is None:
+            normalized = _find_order_by_id_with_fallback(
+                trade_client=trade_client,
+                account=account,
+                order_id=order_id,
+                trade_date=trade_date,
+                execution_key=execution_key,
+            )
+        if normalized is None:
+            if now_utc >= deadline and not cancel_requested:
+                with contextlib.suppress(Exception):
+                    trade_client.cancel_order(account=account, order_id=order_id)
+                cancel_requested = True
+            elif cancel_requested and now_utc >= cancel_deadline:
+                return {
+                    "order_id": order_id,
+                    "final_order_status": "not_found_after_submission",
+                    "filled_quantity": 0.0,
+                    "avg_fill_price": None,
+                    "reason": "order_not_visible",
+                }
+            time.sleep(max(1, int(poll_seconds)))
+            continue
         final_status = normalized["status"]
         filled_quantity = float(normalized.get("filled_quantity") or 0.0)
         if final_status in TERMINAL_ORDER_STATUSES:

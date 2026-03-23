@@ -57,6 +57,7 @@ class StrategyReleaseManifest:
     notification_profile: Optional[str]
     published_at: str
     status: str
+    automation_execution_environment: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -91,6 +92,13 @@ def _load_toml(path: Path) -> Dict[str, Any]:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+def _optional_string(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _copy_if_exists(source: Path, destination: Path) -> Optional[Path]:
@@ -133,6 +141,36 @@ def _default_automation_id(strategy_id: str) -> str:
     manifest = _load_manifest(_strategy_root(strategy_id) / "deployment_manifest.json")
     value = _manifest_automation_id(manifest, strategy_id)
     return value or str(strategy_id)
+
+
+def _generated_automation_path(strategy_id: str) -> Path:
+    return LAYOUT.automation_generated_root / strategy_id / "automation.toml"
+
+
+def _external_automation_path(automation_id: str) -> Path:
+    return Path.home() / ".codex" / "automations" / automation_id / "automation.toml"
+
+
+def _resolve_automation_execution_environment(
+    *,
+    strategy_id: str,
+    automation_id: str,
+    deployment_manifest: Optional[Dict[str, Any]] = None,
+    fallback: Optional[str] = None,
+) -> Optional[str]:
+    manifest_payload = deployment_manifest or _load_manifest(_strategy_root(strategy_id) / "deployment_manifest.json")
+    generated_metadata = _load_toml(_generated_automation_path(strategy_id))
+    external_metadata = _load_toml(_external_automation_path(automation_id))
+    for candidate in (
+        fallback,
+        manifest_payload.get("automation_execution_environment"),
+        external_metadata.get("execution_environment"),
+        generated_metadata.get("execution_environment"),
+    ):
+        value = _optional_string(candidate)
+        if value is not None:
+            return value
+    return None
 
 
 def _fingerprint_from_summary(summary_payload: Dict[str, Any]) -> str:
@@ -228,17 +266,30 @@ def _render_automation_toml(
     automation_name: str,
     strategy_id: str,
     repo_root: Path,
+    execution_environment: Optional[str] = None,
     app_metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
+    python_path = str((repo_root / ".venv" / "Scripts" / "python.exe").resolve()).replace("\\", "/")
+    script_path = str((repo_root / "TradingBot" / "scripts" / "run_tiger_paper_automation.py").resolve()).replace(
+        "\\", "/"
+    )
+    runtime_config_path = str((repo_root / "TradingBot" / "config" / "local" / "tradingbot.runtime.yml").resolve()).replace(
+        "\\", "/"
+    )
     prompt = (
-        "Run `.\\\\.venv\\\\Scripts\\\\python.exe TradingBot\\\\scripts\\\\run_tiger_paper_automation.py "
-        "--strategy-id {strategy_id} --runtime-config TradingBot\\\\config\\\\local\\\\tradingbot.runtime.yml --submit`. "
+        "Run `{python_path} {script_path} "
+        "--strategy-id {strategy_id} --runtime-config {runtime_config_path} --submit`. "
         "Stop without submitting if the selected account type is not PAPER, if Tiger reports the US market is not actionable "
         "for the regular open window, if there is no executable signal, if a real-time Tiger quote is unavailable or stale, or "
         "if the same execution_key was already processed or is already open. Report the strategy id, selected account type, "
         "market status, signal bar date, trade date, trade plan, execution guard, preview artifact path, and the order id plus "
         "final order status if a paper order is submitted."
-    ).format(strategy_id=strategy_id)
+    ).format(
+        python_path=python_path,
+        script_path=script_path,
+        strategy_id=strategy_id,
+        runtime_config_path=runtime_config_path,
+    )
     lines = [
         "version = 1",
         'id = "%s"' % automation_id,
@@ -246,11 +297,12 @@ def _render_automation_toml(
         'prompt = "%s"' % prompt.replace("\\", "\\\\").replace('"', '\\"'),
         'status = "ACTIVE"',
         'rrule = "%s"' % DEFAULT_AUTOMATION_RRULE,
-        'execution_environment = "worktree"',
         'model = "gpt-5.4"',
         'reasoning_effort = "medium"',
         'cwds = ["%s"]' % str(repo_root).replace("\\", "/"),
     ]
+    if _optional_string(execution_environment) is not None:
+        lines.insert(6, 'execution_environment = "%s"' % _optional_string(execution_environment))
     if isinstance(app_metadata, dict):
         for key in ("created_at", "updated_at"):
             value = app_metadata.get(key)
@@ -269,24 +321,31 @@ def sync_codex_automation(
     generated_dir = LAYOUT.automation_generated_root / strategy_id
     generated_dir.mkdir(parents=True, exist_ok=True)
     automation_name = "%s (%s)" % (release_manifest.strategy_name, strategy_id)
+    effective_execution_environment = _resolve_automation_execution_environment(
+        strategy_id=strategy_id,
+        automation_id=release_manifest.automation_id,
+        fallback=release_manifest.automation_execution_environment,
+    )
+    generated_path = _generated_automation_path(strategy_id)
     payload = _render_automation_toml(
         automation_id=release_manifest.automation_id,
         automation_name=automation_name,
         strategy_id=strategy_id,
         repo_root=LAYOUT.repo_root,
+        execution_environment=effective_execution_environment,
     )
-    generated_path = generated_dir / "automation.toml"
     generated_path.write_text(payload, encoding="utf-8")
 
-    external_root = Path.home() / ".codex" / "automations" / release_manifest.automation_id
+    external_path = _external_automation_path(release_manifest.automation_id)
+    external_root = external_path.parent
     external_root.mkdir(parents=True, exist_ok=True)
-    external_path = external_root / "automation.toml"
     external_metadata = _load_toml(external_path)
     external_payload = _render_automation_toml(
         automation_id=release_manifest.automation_id,
         automation_name=automation_name,
         strategy_id=strategy_id,
         repo_root=LAYOUT.repo_root,
+        execution_environment=effective_execution_environment,
         app_metadata=external_metadata,
     )
     external_path.write_text(external_payload, encoding="utf-8")
@@ -317,11 +376,18 @@ def publish_strategy_release(
     notification_profile: Optional[str] = None,
 ) -> StrategyReleaseManifest:
     strategy_root = _strategy_root(strategy_id)
+    deployment_manifest_path = strategy_root / "deployment_manifest.json"
+    deployment_manifest = _load_manifest(deployment_manifest_path)
     package_dir = strategy_root / "packages" / package_id
     package_manifest_path = package_dir / "strategy_package.json"
     if not package_manifest_path.exists():
         raise FileNotFoundError("Strategy package was not found: %s" % package_manifest_path)
     package_manifest = StrategyPackageManifest(**_load_json(package_manifest_path))
+    automation_execution_environment = _resolve_automation_execution_environment(
+        strategy_id=strategy_id,
+        automation_id=package_manifest.automation_id,
+        deployment_manifest=deployment_manifest,
+    )
 
     release_id = _now_timestamp()
     release_dir = strategy_root / "releases" / release_id
@@ -349,11 +415,10 @@ def publish_strategy_release(
         notification_profile=notification_profile,
         published_at=_iso_now(),
         status="live",
+        automation_execution_environment=automation_execution_environment,
     )
     _write_json(release_dir / "release_manifest.json", release_manifest.to_dict())
 
-    deployment_manifest_path = strategy_root / "deployment_manifest.json"
-    deployment_manifest = _load_manifest(deployment_manifest_path)
     releases = []
     for item in deployment_manifest.get("releases", []):
         if item.get("release_id") == release_id:
@@ -383,6 +448,10 @@ def publish_strategy_release(
             "releases": releases,
         }
     )
+    if automation_execution_environment is not None:
+        deployment_manifest["automation_execution_environment"] = automation_execution_environment
+    else:
+        deployment_manifest.pop("automation_execution_environment", None)
     _write_json(deployment_manifest_path, deployment_manifest)
     sync_codex_automation(strategy_id, release_manifest)
     _sync_notification_profile(notification_profile, live_dir)
@@ -405,10 +474,21 @@ def rollback_strategy_release(strategy_id: str, release_id: str) -> StrategyRele
     deployment_manifest_path = strategy_root / "deployment_manifest.json"
     deployment_manifest = _load_manifest(deployment_manifest_path)
     effective_automation_id = _manifest_automation_id(deployment_manifest, release_manifest.automation_id)
+    effective_execution_environment = _resolve_automation_execution_environment(
+        strategy_id=strategy_id,
+        automation_id=effective_automation_id,
+        deployment_manifest=deployment_manifest,
+        fallback=release_manifest.automation_execution_environment,
+    )
     effective_release_manifest = (
         release_manifest
         if effective_automation_id == release_manifest.automation_id
-        else replace(release_manifest, automation_id=effective_automation_id)
+        and effective_execution_environment == release_manifest.automation_execution_environment
+        else replace(
+            release_manifest,
+            automation_id=effective_automation_id,
+            automation_execution_environment=effective_execution_environment,
+        )
     )
     for item in deployment_manifest.get("releases", []):
         item["status"] = "history"
@@ -419,6 +499,10 @@ def rollback_strategy_release(strategy_id: str, release_id: str) -> StrategyRele
     deployment_manifest["live_dir"] = str(live_dir)
     deployment_manifest["automation_id"] = effective_automation_id
     deployment_manifest["notification_profile"] = release_manifest.notification_profile
+    if effective_execution_environment is not None:
+        deployment_manifest["automation_execution_environment"] = effective_execution_environment
+    else:
+        deployment_manifest.pop("automation_execution_environment", None)
     _write_json(deployment_manifest_path, deployment_manifest)
     sync_codex_automation(strategy_id, effective_release_manifest)
     _sync_notification_profile(release_manifest.notification_profile, live_dir)

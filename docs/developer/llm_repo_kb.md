@@ -238,6 +238,9 @@ These tests validate:
 - Codex App has its own UI/state behavior on top of the TOML file.
 - Normal lifecycle changes must go through the App UI or automation directives.
 - Direct file or SQLite edits should only be used for explicit emergency recovery approved by the user.
+- Do not assume Codex App `Runs in = 工作树` is safe on Windows. The App worktree clone can lag behind the live repo and may not contain the current `TradingBot/`, `codex_trading/`, `TestCases/`, or `.venv`.
+- Deployment sync must not force `execution_environment = "worktree"`. Preserve the App-selected execution environment when one already exists.
+- Automation prompts should use absolute repo paths such as `D:/QLib/.venv/Scripts/python.exe` and `D:/QLib/TradingBot/scripts/run_tiger_paper_automation.py` so worktree drift does not break script resolution.
 
 ### Deployment/automation coupling
 

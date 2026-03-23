@@ -1,10 +1,9 @@
 version = 1
 id = "{automation_id}"
 name = "{automation_name}"
-prompt = "Run `.\\\\.venv\\\\Scripts\\\\python.exe TradingBot\\\\scripts\\\\run_tiger_paper_automation.py --strategy-id {strategy_id} --runtime-config TradingBot\\\\config\\\\local\\\\tradingbot.runtime.yml --submit`. Stop without submitting if the selected account type is not PAPER, if Tiger reports the US market is not actionable for the regular open window, if there is no executable signal, if a real-time Tiger quote is unavailable or stale, or if the same execution_key was already processed or is already open. Report the strategy id, selected account type, market status, signal bar date, trade date, trade plan, execution guard, preview artifact path, and the order id plus final order status if a paper order is submitted."
+prompt = "Run `{repo_root}/.venv/Scripts/python.exe {repo_root}/TradingBot/scripts/run_tiger_paper_automation.py --strategy-id {strategy_id} --runtime-config {repo_root}/TradingBot/config/local/tradingbot.runtime.yml --submit`. Stop without submitting if the selected account type is not PAPER, if Tiger reports the US market is not actionable for the regular open window, if there is no executable signal, if a real-time Tiger quote is unavailable or stale, or if the same execution_key was already processed or is already open. Report the strategy id, selected account type, market status, signal bar date, trade date, trade plan, execution guard, preview artifact path, and the order id plus final order status if a paper order is submitted."
 status = "ACTIVE"
 rrule = "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=21;BYMINUTE=20"
-execution_environment = "worktree"
 model = "gpt-5.4"
 reasoning_effort = "medium"
 cwds = ["D:/QLib"]

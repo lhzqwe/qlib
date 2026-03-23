@@ -803,6 +803,64 @@ def test_tiger_trade_window_logic(monkeypatch):
     assert late["reason"] == "beyond_execution_window"
 
 
+def test_poll_tiger_order_falls_back_when_get_order_errors(tmp_path):
+    ledger_path = tmp_path / "execution_ledger.json"
+
+    class FakeContract:
+        def __init__(self, symbol):
+            self.symbol = symbol
+
+    class FakeOrder:
+        def __init__(self, status, filled, order_id=9):
+            self.order_id = order_id
+            self.id = order_id
+            self.contract = FakeContract("GOOGL")
+            self.action = "BUY"
+            self.quantity = 1
+            self.filled = filled
+            self.avg_fill_price = 305.09
+            self.limit_price = None
+            self.user_mark = "manual-flow-test"
+            self.external_id = self.user_mark
+            self.reason = None
+            self.trade_time = None
+            self.update_time = None
+            self.status = status
+
+    class FakeTradeClient:
+        def __init__(self):
+            self.fetch_count = 0
+
+        def get_order(self, account=None, order_id=None, is_brief=False):
+            raise RuntimeError("biz param error")
+
+        def get_open_orders(self, account=None, **kwargs):
+            return []
+
+        def get_orders(self, account=None, start_time=None, end_time=None, limit=200, is_brief=False, **kwargs):
+            self.fetch_count += 1
+            if self.fetch_count == 1:
+                return []
+            return [FakeOrder("Filled", 1.0, order_id=11)]
+
+        def cancel_order(self, account=None, order_id=None):
+            return order_id
+
+    result = poll_tiger_order_to_terminal(
+        trade_client=FakeTradeClient(),
+        account="paper",
+        order_id=9,
+        deadline=datetime.now(timezone.utc) + timedelta(seconds=1),
+        poll_seconds=1,
+        ledger_path=ledger_path,
+        execution_key="manual-flow-test",
+        signal_bar_date="2026-03-23",
+        trade_date="2026-03-23",
+    )
+    assert result["final_order_status"] == "Filled"
+    assert result["filled_quantity"] == 1.0
+
+
 def create_feishu_status_artifacts(
     tmp_path: Path,
     *,

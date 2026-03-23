@@ -89,14 +89,19 @@ def test_build_publish_and_rollback_release(tmp_path, monkeypatch):
     generated_automation = (layout.automation_generated_root / "googl_momo" / "automation.toml").read_text(encoding="utf-8")
     external_automation = ((tmp_path / "home") / ".codex" / "automations" / "tiger-paper-open" / "automation.toml").read_text(encoding="utf-8")
     synced_feishu = yaml.safe_load(feishu_config.read_text(encoding="utf-8"))
+    expected_runner = str(layout.repo_root / ".venv" / "Scripts" / "python.exe").replace("\\", "/")
+    expected_script = str(layout.repo_root / "TradingBot" / "scripts" / "run_tiger_paper_automation.py").replace("\\", "/")
 
     assert Path(release_two.live_dir).exists()
     assert deployment_manifest["current_release_id"] == release_two.release_id
     assert package_two.automation_id == "tiger-paper-open"
     assert deployment_manifest["automation_id"] == "tiger-paper-open"
+    assert deployment_manifest.get("automation_execution_environment") is None
     assert deployment_manifest["releases"][0]["status"] == "history"
     assert deployment_manifest["releases"][-1]["status"] == "live"
-    assert "run_tiger_paper_automation.py --strategy-id googl_momo" in generated_automation
+    assert expected_runner in generated_automation
+    assert expected_script in generated_automation
+    assert 'execution_environment = "worktree"' not in generated_automation
     assert generated_automation == external_automation
     assert synced_feishu["strategy"]["run_dir"] == release_two.live_dir
 
@@ -113,8 +118,61 @@ def test_build_publish_and_rollback_release(tmp_path, monkeypatch):
 
     assert rollback.release_id == release_one.release_id
     assert rollback.automation_id == "googl-paper-automation"
+    assert rollback.automation_execution_environment is None
     assert deployment_manifest_after["current_release_id"] == release_one.release_id
     assert deployment_manifest_after["automation_id"] == "googl-paper-automation"
+    assert deployment_manifest_after.get("automation_execution_environment") is None
     assert 'id = "googl-paper-automation"' in generated_after_rollback
     assert generated_after_rollback == external_after_rollback
     assert synced_feishu_after["strategy"]["run_dir"] == release_one.live_dir
+
+
+def test_publish_preserves_existing_automation_execution_environment(tmp_path, monkeypatch):
+    layout = _make_layout(tmp_path)
+    monkeypatch.setattr(deployment_service, "LAYOUT", layout)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+
+    run_dir = layout.autoresearch_runs_root / "20260322_141856_GOOGL"
+    _write_fake_run(run_dir, symbol="GOOGL", candidate_name="googl_alpha", sharpe=1.3)
+
+    external_root = (tmp_path / "home") / ".codex" / "automations" / "googl-paper-automation"
+    external_root.mkdir(parents=True, exist_ok=True)
+    (external_root / "automation.toml").write_text(
+        "\n".join(
+            [
+                "version = 1",
+                'id = "googl-paper-automation"',
+                'name = "GOOGL Paper Automation"',
+                'prompt = "legacy"',
+                'status = "ACTIVE"',
+                'rrule = "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=21;BYMINUTE=20"',
+                'execution_environment = "workspace"',
+                'model = "gpt-5.4"',
+                'reasoning_effort = "medium"',
+                'cwds = ["D:/QLib"]',
+                "created_at = 1",
+                "updated_at = 2",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    package_manifest = deployment_service.build_strategy_package(
+        run_dir,
+        "googl_momo",
+        instrument_universe=["GOOGL"],
+        automation_id="googl-paper-automation",
+    )
+    release_manifest = deployment_service.publish_strategy_release("googl_momo", package_manifest.package_id)
+
+    deployment_manifest = json.loads((layout.strategies_root / "googl_momo" / "deployment_manifest.json").read_text(encoding="utf-8"))
+    generated_automation = (layout.automation_generated_root / "googl_momo" / "automation.toml").read_text(encoding="utf-8")
+    external_automation = (external_root / "automation.toml").read_text(encoding="utf-8")
+    expected_script = str(layout.repo_root / "TradingBot" / "scripts" / "run_tiger_paper_automation.py").replace("\\", "/")
+
+    assert release_manifest.automation_execution_environment == "workspace"
+    assert deployment_manifest["automation_execution_environment"] == "workspace"
+    assert 'execution_environment = "workspace"' in generated_automation
+    assert 'execution_environment = "workspace"' in external_automation
+    assert expected_script in generated_automation
