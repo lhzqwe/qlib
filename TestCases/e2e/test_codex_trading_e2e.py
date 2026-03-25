@@ -1287,7 +1287,7 @@ def test_strategy_status_loading_and_notification_formatting(tmp_path):
 
 def test_automation_replay_session_end_to_end_and_idempotency(tmp_path):
     run_dir = create_compact_googl_replay_run(tmp_path)
-    output_dir = run_dir / "tiger_paper_auto"
+    output_dir = tmp_path / "Saved" / "googl_momo" / "20241023" / "093000" / "tiger_paper_auto"
     market_tz = ZoneInfo("America/New_York")
     trade_client = SimpleNamespace()
     quote_client = SimpleNamespace()
@@ -1469,9 +1469,12 @@ def test_automation_replay_session_end_to_end_and_idempotency(tmp_path):
         )
 
     def make_notifier(kind: str, collector: list):
-        def _notify(config_path, *, strategy_run_dir_override=None, tiger_config_override=None):
+        def _notify(config_path, *, strategy_run_dir_override=None, tiger_config_override=None, artifacts_dir_override=None):
             assert config_path == "mock://feishu"
-            status = build_strategy_status_snapshot(Path(strategy_run_dir_override))
+            status = build_strategy_status_snapshot(
+                Path(strategy_run_dir_override),
+                artifacts_dir=Path(artifacts_dir_override) if artifacts_dir_override else None,
+            )
             title, body = build_notification_text(kind, status)
             collector.append({"kind": kind, "title": title, "body": body})
             return True
@@ -1630,6 +1633,36 @@ def test_strategy_status_loading_without_preview_or_submission(tmp_path):
     assert status.latest_submission is None
     assert "最近预览: 尚未生成" in format_strategy_message(status)
     assert "最近执行: ledger" in format_last_execution_message(status)
+
+
+def test_strategy_status_loading_with_explicit_artifacts_dir(tmp_path):
+    run_dir = create_feishu_status_artifacts(tmp_path, with_preview=False, with_submission=False)
+    artifacts_dir = tmp_path / "Saved" / "googl_momo" / "20260325" / "093000" / "tiger_paper_auto"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    (artifacts_dir / "tiger_paper_auto_preview.json").write_text(
+        json.dumps(
+            {
+                "run_dir": str(run_dir),
+                "symbol": "AMD",
+                "strategy_name": "winner_alpha",
+                "signal_bar_date": "2026-03-24",
+                "trade_date": "2026-03-25",
+                "live_snapshot": {"symbol": "AMD", "next_session_action": "hold"},
+                "trade_plan": {"action": "hold", "reason": "no_executable_signal"},
+                "execution_guard": {"decision": "submit_new_order", "reason": "no_conflict"},
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    status = build_strategy_status_snapshot(run_dir, artifacts_dir=artifacts_dir)
+
+    assert status.preview_path == artifacts_dir / "tiger_paper_auto_preview.json"
+    assert status.latest_preview is not None
+    assert status.latest_preview["trade_plan"]["reason"] == "no_executable_signal"
+    assert "计划=观望 market / no_executable_signal" in format_strategy_message(status)
 
 
 def test_feishu_bot_service_queries_and_allowlist(tmp_path):

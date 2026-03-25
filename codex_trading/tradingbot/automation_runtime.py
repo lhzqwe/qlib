@@ -172,14 +172,20 @@ def _maybe_notify(
     *,
     run_dir: Path,
     tiger_config_path: str,
+    artifacts_dir: Optional[Path] = None,
+    wait: bool = False,
 ) -> bool:
     if not config_path:
         return False
-    return notifier(
+    result = notifier(
         config_path,
         strategy_run_dir_override=str(run_dir),
         tiger_config_override=tiger_config_path,
+        artifacts_dir_override=str(artifacts_dir) if artifacts_dir else None,
     )
+    if wait and hasattr(result, "result"):
+        return bool(result.result())
+    return bool(result)
 
 
 def _load_daily_state_row(run_dir: Path, trade_date: str) -> Optional[Dict[str, Any]]:
@@ -373,6 +379,103 @@ def execute_automation_session(
     output_dir.mkdir(parents=True, exist_ok=True)
     ledger_path = output_dir / "execution_ledger.json"
 
+    def _build_preview_state(current_market_status, current_trade_window) -> Dict[str, Any]:
+        trade_date = args.signal_end_date or current_trade_window["trade_date"]
+        if args.submit and trade_date != current_trade_window["trade_date"]:
+            raise RuntimeError("signal_end_date must match the current Tiger trade_date when --submit is used.")
+
+        context = hooks.load_context(
+            run_dir=run_dir,
+            signal_start_date=args.signal_start_date,
+            signal_end_date=trade_date,
+        )
+        snapshot = hooks.build_snapshot(
+            context=context,
+            output_dir=output_dir,
+            executable_trade_date=trade_date,
+            tiger_namespace=tiger_namespace,
+            quote_client=quote_client,
+            bars_lookback_buffer=args.bars_lookback_buffer,
+        )
+        account_summary = hooks.build_account_summary(
+            trade_client=trade_client,
+            config_account=getattr(config_obj, "account", None),
+            symbol=context.symbol,
+            region=context.region,
+            requested_paper_account=args.paper_account,
+        )
+        quote_snapshot = hooks.fetch_quote_snapshot(
+            quote_client=quote_client,
+            symbol=context.symbol,
+            allow_delayed_preview=True,
+        )
+        plan = hooks.build_trade_plan(
+            snapshot=snapshot,
+            account_summary=account_summary,
+            order_type=args.order_type,
+            quote_snapshot=quote_snapshot,
+            cash_buffer_pct=args.cash_buffer_pct,
+            limit_price=args.limit_price,
+            max_quote_staleness_sec=args.max_quote_staleness_sec,
+            require_realtime_quote=True,
+        )
+        execution_key = hooks.build_execution_key(
+            paper_account=account_summary.selected_account,
+            symbol=context.symbol,
+            strategy_name=context.winner_spec.name,
+            trade_date=snapshot.next_trade_date,
+            signal_bar_date=snapshot.signal_bar_date,
+            action=plan.action if plan.action in {"buy", "sell"} else "hold",
+        )
+        open_orders, historical_orders = hooks.fetch_symbol_orders(
+            trade_client=trade_client,
+            account=account_summary.selected_account,
+            symbol=context.symbol,
+            region=context.region,
+            trade_date=snapshot.next_trade_date,
+        )
+        guard = hooks.assess_execution_guard(
+            execution_key=execution_key,
+            symbol=context.symbol,
+            action=plan.action.upper() if plan.action else "HOLD",
+            open_orders=open_orders,
+            historical_orders=historical_orders,
+            ledger_record=get_execution_record(ledger_path, execution_key),
+        )
+        preview_payload = {
+            "run_dir": str(run_dir),
+            "symbol": context.symbol,
+            "strategy_name": context.winner_spec.name,
+            "market_status": _serialize_market_status(current_market_status),
+            "trade_window": {
+                "can_trade_today": bool(current_trade_window["can_trade_today"]),
+                "reason": current_trade_window["reason"],
+                "trade_date": current_trade_window["trade_date"],
+                "wait_seconds": current_trade_window["wait_seconds"],
+                "now_market": current_trade_window["now_market"].isoformat(),
+                "submission_deadline": current_trade_window["submission_deadline"].isoformat(),
+            },
+            "signal_bar_date": snapshot.signal_bar_date,
+            "trade_date": snapshot.next_trade_date,
+            "execution_key": execution_key,
+            "live_snapshot": snapshot.to_dict(),
+            "quote_snapshot": quote_snapshot.to_dict(),
+            "tiger_account": account_summary.to_dict(),
+            "trade_plan": plan.to_dict(),
+            "execution_guard": guard.to_dict(),
+            "submit_requested": bool(args.submit),
+        }
+        return {
+            "context": context,
+            "snapshot": snapshot,
+            "account_summary": account_summary,
+            "quote_snapshot": quote_snapshot,
+            "plan": plan,
+            "execution_key": execution_key,
+            "guard": guard,
+            "preview_payload": preview_payload,
+        }
+
     market_status = hooks.resolve_market_status(quote_client, tiger_namespace["Market"].US)
     trade_window = hooks.determine_trade_window(
         market_status=market_status,
@@ -380,7 +483,21 @@ def execute_automation_session(
         max_preopen_wait_minutes=args.max_preopen_wait_minutes,
     )
 
+    preview_path = output_dir / "tiger_paper_auto_preview.json"
+    preview_state = _build_preview_state(market_status, trade_window)
+    _write_json(preview_path, preview_state["preview_payload"])
+    preview_notified = False
+
     if args.submit and trade_window["wait_seconds"] > 0:
+        _maybe_notify(
+            hooks.notify_preview,
+            args.feishu_config,
+            run_dir=run_dir,
+            tiger_config_path=args.tiger_config,
+            artifacts_dir=output_dir,
+            wait=True,
+        )
+        preview_notified = True
         print("Waiting %d seconds for the US regular open." % round(trade_window["wait_seconds"]))
         hooks.sleep_fn(float(trade_window["wait_seconds"]))
         market_status = hooks.resolve_market_status(quote_client, tiger_namespace["Market"].US)
@@ -389,101 +506,26 @@ def execute_automation_session(
             execution_window_minutes=args.execution_window_minutes,
             max_preopen_wait_minutes=args.max_preopen_wait_minutes,
         )
+        preview_state = _build_preview_state(market_status, trade_window)
+        _write_json(preview_path, preview_state["preview_payload"])
 
-    trade_date = args.signal_end_date or trade_window["trade_date"]
-    if args.submit and trade_date != trade_window["trade_date"]:
-        raise RuntimeError("signal_end_date must match the current Tiger trade_date when --submit is used.")
+    if not preview_notified:
+        _maybe_notify(
+            hooks.notify_preview,
+            args.feishu_config,
+            run_dir=run_dir,
+            tiger_config_path=args.tiger_config,
+            artifacts_dir=output_dir,
+        )
 
-    context = hooks.load_context(
-        run_dir=run_dir,
-        signal_start_date=args.signal_start_date,
-        signal_end_date=trade_date,
-    )
-    snapshot = hooks.build_snapshot(
-        context=context,
-        output_dir=output_dir,
-        executable_trade_date=trade_date,
-        tiger_namespace=tiger_namespace,
-        quote_client=quote_client,
-        bars_lookback_buffer=args.bars_lookback_buffer,
-    )
-    account_summary = hooks.build_account_summary(
-        trade_client=trade_client,
-        config_account=getattr(config_obj, "account", None),
-        symbol=context.symbol,
-        region=context.region,
-        requested_paper_account=args.paper_account,
-    )
-    quote_snapshot = hooks.fetch_quote_snapshot(
-        quote_client=quote_client,
-        symbol=context.symbol,
-        allow_delayed_preview=True,
-    )
-    plan = hooks.build_trade_plan(
-        snapshot=snapshot,
-        account_summary=account_summary,
-        order_type=args.order_type,
-        quote_snapshot=quote_snapshot,
-        cash_buffer_pct=args.cash_buffer_pct,
-        limit_price=args.limit_price,
-        max_quote_staleness_sec=args.max_quote_staleness_sec,
-        require_realtime_quote=True,
-    )
-    execution_key = hooks.build_execution_key(
-        paper_account=account_summary.selected_account,
-        symbol=context.symbol,
-        strategy_name=context.winner_spec.name,
-        trade_date=snapshot.next_trade_date,
-        signal_bar_date=snapshot.signal_bar_date,
-        action=plan.action if plan.action in {"buy", "sell"} else "hold",
-    )
-    open_orders, historical_orders = hooks.fetch_symbol_orders(
-        trade_client=trade_client,
-        account=account_summary.selected_account,
-        symbol=context.symbol,
-        region=context.region,
-        trade_date=snapshot.next_trade_date,
-    )
-    guard = hooks.assess_execution_guard(
-        execution_key=execution_key,
-        symbol=context.symbol,
-        action=plan.action.upper() if plan.action else "HOLD",
-        open_orders=open_orders,
-        historical_orders=historical_orders,
-        ledger_record=get_execution_record(ledger_path, execution_key),
-    )
-
-    preview_payload = {
-        "run_dir": str(run_dir),
-        "symbol": context.symbol,
-        "strategy_name": context.winner_spec.name,
-        "market_status": _serialize_market_status(market_status),
-        "trade_window": {
-            "can_trade_today": bool(trade_window["can_trade_today"]),
-            "reason": trade_window["reason"],
-            "trade_date": trade_window["trade_date"],
-            "wait_seconds": trade_window["wait_seconds"],
-            "now_market": trade_window["now_market"].isoformat(),
-            "submission_deadline": trade_window["submission_deadline"].isoformat(),
-        },
-        "signal_bar_date": snapshot.signal_bar_date,
-        "trade_date": snapshot.next_trade_date,
-        "execution_key": execution_key,
-        "live_snapshot": snapshot.to_dict(),
-        "quote_snapshot": quote_snapshot.to_dict(),
-        "tiger_account": account_summary.to_dict(),
-        "trade_plan": plan.to_dict(),
-        "execution_guard": guard.to_dict(),
-        "submit_requested": bool(args.submit),
-    }
-    preview_path = output_dir / "tiger_paper_auto_preview.json"
-    _write_json(preview_path, preview_payload)
-    _maybe_notify(
-        hooks.notify_preview,
-        args.feishu_config,
-        run_dir=run_dir,
-        tiger_config_path=args.tiger_config,
-    )
+    context = preview_state["context"]
+    snapshot = preview_state["snapshot"]
+    account_summary = preview_state["account_summary"]
+    quote_snapshot = preview_state["quote_snapshot"]
+    plan = preview_state["plan"]
+    execution_key = preview_state["execution_key"]
+    guard = preview_state["guard"]
+    preview_payload = preview_state["preview_payload"]
 
     print("Strategy run:", run_dir)
     print("Tiger paper account:", mask_account(account_summary.selected_account))
@@ -555,6 +597,7 @@ def execute_automation_session(
                 args.feishu_config,
                 run_dir=run_dir,
                 tiger_config_path=args.tiger_config,
+                artifacts_dir=output_dir,
             )
         portfolio_snapshot = None
         try:
@@ -644,6 +687,7 @@ def execute_automation_session(
             args.feishu_config,
             run_dir=run_dir,
             tiger_config_path=args.tiger_config,
+            artifacts_dir=output_dir,
         )
     portfolio_snapshot = None
     try:

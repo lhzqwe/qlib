@@ -133,6 +133,7 @@ def main() -> None:
                 args.feishu_config,
                 strategy_run_dir_override=str(run_dir),
                 tiger_config_override=args.tiger_config,
+                artifacts_dir_override=str(output_dir),
             )
 
         print("Strategy run:", run_dir)

@@ -59,10 +59,12 @@ class FeishuBotConfig:
     tiger: TigerRuntimeConfig
     strategy_run_dir: Path
     notifications: NotificationConfig
+    artifacts_dir: Optional[Path] = None
 
     def to_dict(self) -> Dict[str, Any]:
         payload = asdict(self)
         payload["strategy_run_dir"] = str(self.strategy_run_dir)
+        payload["artifacts_dir"] = str(self.artifacts_dir) if self.artifacts_dir else None
         return payload
 
 
@@ -340,6 +342,7 @@ def load_feishu_bot_config(
     *,
     strategy_run_dir_override: Optional[str] = None,
     tiger_config_override: Optional[str] = None,
+    artifacts_dir_override: Optional[str] = None,
 ) -> FeishuBotConfig:
     path = Path(config_path).expanduser().resolve()
     payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -396,6 +399,7 @@ def load_feishu_bot_config(
         label="strategy.run_dir",
     )
     run_dir = Path(run_dir_text).expanduser().resolve() if run_dir_text else find_latest_run_dir(str(LAYOUT.autoresearch_runs_root))
+    artifacts_dir = Path(artifacts_dir_override).expanduser().resolve() if artifacts_dir_override else None
     notifications = NotificationConfig(
         push_preview=_coerce_bool(notifications_payload.get("push_preview"), True),
         push_submission=_coerce_bool(notifications_payload.get("push_submission"), True),
@@ -415,39 +419,35 @@ def load_feishu_bot_config(
             paper_account=str(paper_account) if paper_account else None,
         ),
         strategy_run_dir=run_dir,
+        artifacts_dir=artifacts_dir,
         notifications=notifications,
     )
 
 
-def build_strategy_status_snapshot(run_dir: Path) -> StrategyStatusSnapshot:
+def build_strategy_status_snapshot(run_dir: Path, *, artifacts_dir: Optional[Path] = None) -> StrategyStatusSnapshot:
     run_dir = Path(run_dir).expanduser().resolve()
     winner_summary = _read_json(run_dir / "winner_summary.json")
     if not winner_summary:
         raise FileNotFoundError("winner_summary.json is missing under %s" % run_dir)
     run_config = _read_json(run_dir / "run_config.json") or {}
+    artifact_roots = []
+    if artifacts_dir is not None:
+        artifact_roots.append(Path(artifacts_dir).expanduser().resolve())
+    artifact_roots.extend([run_dir / "tiger_paper_auto", run_dir / "tiger_paper"])
     preview_path, latest_preview = _latest_existing(
-        [
-            run_dir / "tiger_paper_auto" / "tiger_paper_auto_preview.json",
-            run_dir / "tiger_paper" / "tiger_paper_preview.json",
-        ]
+        [root / "tiger_paper_auto_preview.json" for root in artifact_roots]
+        + [root / "tiger_paper_preview.json" for root in artifact_roots]
     )
     submission_path, latest_submission = _latest_existing(
-        [
-            run_dir / "tiger_paper_auto" / "tiger_paper_auto_submission.json",
-            run_dir / "tiger_paper" / "tiger_paper_submission.json",
-        ]
+        [root / "tiger_paper_auto_submission.json" for root in artifact_roots]
+        + [root / "tiger_paper_submission.json" for root in artifact_roots]
     )
     summary_path, latest_summary = _latest_existing(
-        [
-            run_dir / "tiger_paper_auto" / "tiger_paper_auto_summary.json",
-            run_dir / "tiger_paper" / "tiger_paper_summary.json",
-        ]
+        [root / "tiger_paper_auto_summary.json" for root in artifact_roots]
+        + [root / "tiger_paper_summary.json" for root in artifact_roots]
     )
     ledger_path, ledger_payload = _latest_existing(
-        [
-            run_dir / "tiger_paper_auto" / "execution_ledger.json",
-            run_dir / "tiger_paper" / "execution_ledger.json",
-        ]
+        [root / "execution_ledger.json" for root in artifact_roots]
     )
     cumulative_return_pct = None
     cumulative_return = winner_summary.get("cumulative_return")
@@ -886,7 +886,7 @@ def _safe_send_notification(
         return False
     try:
         try:
-            status = build_strategy_status_snapshot(config.strategy_run_dir)
+            status = build_strategy_status_snapshot(config.strategy_run_dir, artifacts_dir=config.artifacts_dir)
         except Exception:
             if kind != "error":
                 raise
@@ -933,11 +933,13 @@ def notify_feishu_preview(
     *,
     strategy_run_dir_override: Optional[str] = None,
     tiger_config_override: Optional[str] = None,
+    artifacts_dir_override: Optional[str] = None,
 ) -> bool:
     config = load_feishu_bot_config(
         config_path,
         strategy_run_dir_override=strategy_run_dir_override,
         tiger_config_override=tiger_config_override,
+        artifacts_dir_override=artifacts_dir_override,
     )
     return _safe_send_notification(
         config,
@@ -951,11 +953,13 @@ def notify_feishu_submission(
     *,
     strategy_run_dir_override: Optional[str] = None,
     tiger_config_override: Optional[str] = None,
+    artifacts_dir_override: Optional[str] = None,
 ) -> bool:
     config = load_feishu_bot_config(
         config_path,
         strategy_run_dir_override=strategy_run_dir_override,
         tiger_config_override=tiger_config_override,
+        artifacts_dir_override=artifacts_dir_override,
     )
     return _safe_send_notification(
         config,
@@ -969,11 +973,13 @@ def notify_feishu_summary(
     *,
     strategy_run_dir_override: Optional[str] = None,
     tiger_config_override: Optional[str] = None,
+    artifacts_dir_override: Optional[str] = None,
 ) -> bool:
     config = load_feishu_bot_config(
         config_path,
         strategy_run_dir_override=strategy_run_dir_override,
         tiger_config_override=tiger_config_override,
+        artifacts_dir_override=artifacts_dir_override,
     )
     return _safe_send_notification(
         config,
@@ -991,12 +997,14 @@ def enqueue_feishu_preview(
     *,
     strategy_run_dir_override: Optional[str] = None,
     tiger_config_override: Optional[str] = None,
+    artifacts_dir_override: Optional[str] = None,
 ) -> Future:
     return _submit_async_notification(
         lambda: notify_feishu_preview(
             config_path,
             strategy_run_dir_override=strategy_run_dir_override,
             tiger_config_override=tiger_config_override,
+            artifacts_dir_override=artifacts_dir_override,
         )
     )
 
@@ -1006,12 +1014,14 @@ def enqueue_feishu_submission(
     *,
     strategy_run_dir_override: Optional[str] = None,
     tiger_config_override: Optional[str] = None,
+    artifacts_dir_override: Optional[str] = None,
 ) -> Future:
     return _submit_async_notification(
         lambda: notify_feishu_submission(
             config_path,
             strategy_run_dir_override=strategy_run_dir_override,
             tiger_config_override=tiger_config_override,
+            artifacts_dir_override=artifacts_dir_override,
         )
     )
 
@@ -1021,12 +1031,14 @@ def enqueue_feishu_summary(
     *,
     strategy_run_dir_override: Optional[str] = None,
     tiger_config_override: Optional[str] = None,
+    artifacts_dir_override: Optional[str] = None,
 ) -> Future:
     return _submit_async_notification(
         lambda: notify_feishu_summary(
             config_path,
             strategy_run_dir_override=strategy_run_dir_override,
             tiger_config_override=tiger_config_override,
+            artifacts_dir_override=artifacts_dir_override,
         )
     )
 
@@ -1036,6 +1048,7 @@ def notify_feishu_error(
     *,
     strategy_run_dir_override: Optional[str] = None,
     tiger_config_override: Optional[str] = None,
+    artifacts_dir_override: Optional[str] = None,
     error: str,
     stage: Optional[str] = None,
 ) -> bool:
@@ -1043,6 +1056,7 @@ def notify_feishu_error(
         config_path,
         strategy_run_dir_override=strategy_run_dir_override,
         tiger_config_override=tiger_config_override,
+        artifacts_dir_override=artifacts_dir_override,
     )
     return _safe_send_notification(
         config,
@@ -1058,6 +1072,7 @@ def enqueue_feishu_error(
     *,
     strategy_run_dir_override: Optional[str] = None,
     tiger_config_override: Optional[str] = None,
+    artifacts_dir_override: Optional[str] = None,
     error: str,
     stage: Optional[str] = None,
 ) -> Future:
@@ -1066,6 +1081,7 @@ def enqueue_feishu_error(
             config_path,
             strategy_run_dir_override=strategy_run_dir_override,
             tiger_config_override=tiger_config_override,
+            artifacts_dir_override=artifacts_dir_override,
             error=error,
             stage=stage,
         )
